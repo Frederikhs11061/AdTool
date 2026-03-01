@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { action, internalMutation, internalQuery } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 const FORMAT_DIMENSIONS: Record<string, { w: number; h: number }> = {
   "1080x1080": { w: 1080, h: 1080 },
@@ -208,16 +208,26 @@ function synthesizeFromResearchFallback(
   return { audience, angle, concept, copies: [...new Set(copies)].length ? [...new Set(copies)] : [angle] };
 }
 
+type WinnerAd = { headline: string; bodyCopy?: string; angle?: string; concept?: string };
+
 /** Call Claude to generate unique audience, angle, concept and copy variations from research */
 async function synthesizeWithClaude(
   apiKey: string,
   productName: string,
   brand: { title?: string; description?: string },
-  ad: { title?: string; description?: string }
+  ad: { title?: string; description?: string },
+  winnerAds: WinnerAd[] = []
 ): Promise<{ audience: string; angle: string; concept: string; copies: string[] }> {
   const brandText = [brand.title, brand.description].filter(Boolean).join("\n");
   const adText = [ad.title, ad.description].filter(Boolean).join("\n");
-  const prompt = `Du er en ekspert i annonce-strategi og markedsresearch. Baseret på webshop/brand og reference-annonce nedenfor, udled UNIKKE koncepter (ikke generiske).
+  const winnerSection =
+    winnerAds.length > 0
+      ? `\nEksempler på winner ads (brug som inspiration til angle og stil):\n${winnerAds
+          .slice(0, 8)
+          .map((w) => `- Headline: ${w.headline}${w.angle ? ` | Angle: ${w.angle}` : ""}${w.concept ? ` | Concept: ${w.concept}` : ""}`)
+          .join("\n")}\n`
+      : "";
+  const prompt = `Du er en ekspert i annonce-strategi og markedsresearch. Baseret på webshop/brand og reference-annonce nedenfor, udled UNIKKE koncepter (ikke generiske).${winnerSection}
 
 Produkt: ${productName}
 
@@ -271,20 +281,24 @@ Eksempel-format: {"audience":"...","angle":"...","concept":"...","copies":["..."
 async function generateImageNanoBanana(
   apiKey: string,
   prompt: string,
-  options: { width: number; height: number; model?: string; baseUrl?: string }
+  options: { width: number; height: number; model?: string; baseUrl?: string; referenceImageUrls?: string[] }
 ): Promise<string> {
   const baseUrl = (options.baseUrl || "https://api.defapi.org").replace(/\/$/, "");
   const model = options.model || "google/gempix2";
+  const body: { model: string; prompt: string; images?: string[] } = {
+    model,
+    prompt: `${prompt}. High quality, professional ad creative, ${options.width}x${options.height} aspect ratio.`,
+  };
+  if (options.referenceImageUrls?.length) {
+    body.images = options.referenceImageUrls.slice(0, 4);
+  }
   const res = await fetch(`${baseUrl}/api/image/gen`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      prompt: `${prompt}. High quality, professional ad creative, ${options.width}x${options.height} aspect ratio.`,
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.text();
@@ -349,10 +363,18 @@ export const analyzeAd = action({
     let adContext: { title?: string; description?: string; image?: string } = {};
     adContext = await fetchPageContext(adUrl);
 
+    const winnerAdsList = await ctx.runQuery(api.winnerAds.list, { productId, limit: 12 });
+    const winnerAdsForClaude: WinnerAd[] = winnerAdsList.map((w) => ({
+      headline: w.headline,
+      bodyCopy: w.bodyCopy,
+      angle: w.angle ?? undefined,
+      concept: w.concept ?? undefined,
+    }));
+
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const { audience, angle, concept, copies } =
       anthropicKey?.trim()
-        ? await synthesizeWithClaude(anthropicKey, productName, brandContext, adContext)
+        ? await synthesizeWithClaude(anthropicKey, productName, brandContext, adContext, winnerAdsForClaude)
         : synthesizeFromResearchFallback(productName, brandContext, adContext);
 
     const hook = adContext.description?.slice(0, 120) || adContext.title || angle;
@@ -436,6 +458,15 @@ export const generateAds = action({
       }
     }
 
+    const winnerAdsList = await ctx.runQuery(api.winnerAds.list, {
+      productId: args.productId,
+      limit: 10,
+    });
+    const referenceImageUrls = winnerAdsList
+      .map((w) => w.imageUrl)
+      .filter(Boolean)
+      .slice(0, 4);
+
     const nanoBananaKey = process.env.NANO_BANANA_API_KEY?.trim();
     const nanoBananaUrl = process.env.NANO_BANANA_API_URL?.trim();
     const nanoBananaModel = process.env.NANO_BANANA_MODEL?.trim();
@@ -458,6 +489,7 @@ export const generateAds = action({
             height: dims.h,
             model: nanoBananaModel || undefined,
             baseUrl: nanoBananaUrl || undefined,
+            referenceImageUrls: referenceImageUrls.length ? referenceImageUrls : undefined,
           });
           imageUrls.push(url);
         } catch (e) {

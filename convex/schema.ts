@@ -63,4 +63,18 @@ export default defineSchema({
     sortOrder: v.number(),
     createdAt: v.number(),
   }).index("by_set", ["creativeSetId"]),
+
+  // Winner ads / ad library: reference-billeder systemet trækker på ved generering
+  winnerAds: defineTable({
+    imageUrl: v.string(),
+    headline: v.string(),
+    bodyCopy: v.optional(v.string()),
+    angle: v.optional(v.string()),
+    concept: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    productId: v.optional(v.id("products")),
+    createdAt: v.number(),
+  })
+    .index("by_created", ["createdAt"])
+    .index("by_product", ["productId"]),
 });

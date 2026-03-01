@@ -13,6 +13,7 @@ import type * as adActions from "../adActions.js";
 import type * as creativeSets from "../creativeSets.js";
 import type * as intelligence from "../intelligence.js";
 import type * as products from "../products.js";
+import type * as winnerAds from "../winnerAds.js";
 
 import type {
   ApiFromModules,
@@ -26,6 +27,7 @@ declare const fullApi: ApiFromModules<{
   creativeSets: typeof creativeSets;
   intelligence: typeof intelligence;
   products: typeof products;
+  winnerAds: typeof winnerAds;
 }>;
 
 /**

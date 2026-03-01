@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Package, FolderKanban, Sparkles, Zap } from "lucide-react";
+import { Package, FolderKanban, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { href: "/products", label: "Products", icon: Package },
+  { href: "/winner-ads", label: "Winner ads", icon: ImageIcon },
   { href: "/projects", label: "Projects", icon: FolderKanban },
 ];
 
@@ -24,7 +25,7 @@ export function Sidebar() {
       </div>
       <nav className="flex-1 p-3 space-y-0.5">
         {nav.map(({ href, label, icon: Icon }) => {
-          const active = href === "/products" ? isProducts : pathname.startsWith(href);
+          const active = href === "/products" ? isProducts : pathname === href || (href !== "/products" && pathname.startsWith(href));
           return (
             <Link
               key={href}
