@@ -3,15 +3,9 @@ import { action } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 
-type InternalApi = {
-  actions: {
-    insertAnalyzeAction: import("convex/server").FunctionReference<"mutation", "internal", { productId: Id<"products">; adLibraryUrl: string; analyzedAd: string }, Id<"adActions">>;
-    insertGenerateResult: import("convex/server").FunctionReference<"mutation", "internal", Record<string, unknown>, Id<"creativeSets">>;
-    upsertIntelligence: import("convex/server").FunctionReference<"mutation", "internal", Record<string, unknown>, void>;
-    getProduct: import("convex/server").FunctionReference<"query", "internal", { productId: Id<"products"> }, { name: string } | null>;
-    getLatestAnalyzedForProductAndUrl: import("convex/server").FunctionReference<"query", "internal", { productId: Id<"products">; adLibraryUrl?: string }, string | null>;
-  };
-};
+// Internal functions live in actions.internal.ts – Convex exposes them under "actions.internal"
+const internalMod =
+  ((internal as Record<string, unknown>)["actions.internal"] ?? (internal as Record<string, unknown>).actions) as Record<string, unknown>;
 
 const FORMAT_DIMENSIONS: Record<string, { w: number; h: number }> = {
   "1080x1080": { w: 1080, h: 1080 },
@@ -67,7 +61,7 @@ export const analyzeAd = action({
       description,
       image,
     };
-    const actionId = await ctx.runMutation((internal as InternalApi).actions.insertAnalyzeAction, {
+    const actionId = await ctx.runMutation(internalMod.insertAnalyzeAction as Parameters<typeof ctx.runMutation>[0], {
       productId,
       adLibraryUrl: url,
       analyzedAd: JSON.stringify(analyzedAd),
@@ -92,7 +86,7 @@ export const generateAds = action({
     const dims = FORMAT_DIMENSIONS[format] ?? FORMAT_DIMENSIONS["1080x1080"];
 
     const analyzedJson = await ctx.runQuery(
-      (internal as InternalApi).actions.getLatestAnalyzedForProductAndUrl,
+      internalMod.getLatestAnalyzedForProductAndUrl as Parameters<typeof ctx.runQuery>[0],
       { productId: args.productId, adLibraryUrl: args.adLibraryUrl ?? undefined }
     );
     let audience: string | undefined;
@@ -111,7 +105,7 @@ export const generateAds = action({
       }
     }
 
-    const creativeSetId = await ctx.runMutation((internal as InternalApi).actions.insertGenerateResult, {
+    const creativeSetId = await ctx.runMutation(internalMod.insertGenerateResult as Parameters<typeof ctx.runMutation>[0], {
       productId: args.productId,
       adLibraryUrl: args.adLibraryUrl ?? undefined,
       adType: args.adType,
@@ -132,7 +126,7 @@ export const generateAds = action({
 export const runResearch = action({
   args: { productId: v.id("products") },
   handler: async (ctx, { productId }): Promise<{ ok: boolean }> => {
-    const product = await ctx.runQuery((internal as InternalApi).actions.getProduct, { productId });
+    const product = await ctx.runQuery(internalMod.getProduct as Parameters<typeof ctx.runQuery>[0], { productId });
     if (!product) throw new Error("Product not found");
 
     const keyFeatures = [
@@ -195,7 +189,7 @@ export const runResearch = action({
       "Compact enough for everyday carry while still delivering meaningful product volume",
     ];
 
-    await ctx.runMutation((internal as InternalApi).actions.upsertIntelligence, {
+    await ctx.runMutation(internalMod.upsertIntelligence as Parameters<typeof ctx.runMutation>[0], {
       productId,
       keyFeatures: JSON.stringify(keyFeatures),
       keyBenefits: JSON.stringify(keyBenefits),
