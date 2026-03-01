@@ -64,6 +64,7 @@ export const insertGenerateResult = internalMutation({
     angle: v.optional(v.string()),
     concepts: v.optional(v.string()),
     copies: v.optional(v.array(v.string())),
+    imageUrls: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const actionId = await ctx.db.insert("adActions", {
@@ -91,10 +92,13 @@ export const insertGenerateResult = internalMutation({
       createdAt: Date.now(),
     });
     const copies = args.copies?.length ? args.copies : defaultCopies;
+    const imageUrls = args.imageUrls?.length ? args.imageUrls : null;
     for (let i = 0; i < args.variations; i++) {
+      const imageUrl =
+        imageUrls && imageUrls[i] ? imageUrls[i] : `https://placehold.co/${args.dims.w}x${args.dims.h}/1f2937/8b5cf6?text=Ad+${i + 1}`;
       await ctx.db.insert("creatives", {
         creativeSetId,
-        imageUrl: `https://placehold.co/${args.dims.w}x${args.dims.h}/1f2937/8b5cf6?text=Ad+${i + 1}`,
+        imageUrl,
         width: args.dims.w,
         height: args.dims.h,
         copy: copies[i % copies.length],
@@ -182,8 +186,8 @@ async function fetchPageContext(url: string): Promise<{ title?: string; descript
   }
 }
 
-/** Derive audience, angle, concept from ad + brand (market research synthesis) */
-function synthesizeFromResearch(
+/** Fallback when no LLM: derive audience, angle, concept from ad + brand */
+function synthesizeFromResearchFallback(
   productName: string,
   brand: { title?: string; description?: string },
   ad: { title?: string; description?: string }
@@ -191,28 +195,120 @@ function synthesizeFromResearch(
   const brandDesc = (brand.description || brand.title || "").slice(0, 300);
   const adCopy = (ad.description || ad.title || "").slice(0, 300);
   const adTitle = ad.title || ad.description?.split(/[.!?]/)[0]?.trim() || productName;
-
   const audience =
     brandDesc || adCopy
       ? `People interested in ${productName} who want ${(adCopy || brandDesc).slice(0, 80).replace(/\s+/g, " ")}`
-      : `Target audience for ${productName} (from reference ad and webshop research)`;
-
+      : `Target audience for ${productName}`;
   const angle = adTitle || productName;
-
   const concept =
-    /lifestyle|livet|dagligdag|ro|søvn|stress|velvære|wellness|comfort/i.test(adCopy + brandDesc)
-      ? "Lifestyle"
-      : /rabat|tilbud|spar|save|deal|offer/i.test(adCopy + brandDesc)
-        ? "Offer"
-        : "Product benefit";
+    /lifestyle|livet|ro|søvn|stress|velvære|wellness/i.test(adCopy + brandDesc) ? "Lifestyle"
+    : /rabat|tilbud|spar|save|deal|offer/i.test(adCopy + brandDesc) ? "Offer"
+    : "Product benefit";
+  const copies = [adTitle, ad.description?.split(/[.!?]/)[0]?.trim() || angle, brandDesc.slice(0, 80) || angle].filter(Boolean);
+  return { audience, angle, concept, copies: [...new Set(copies)].length ? [...new Set(copies)] : [angle] };
+}
 
-  const copies = [
-    adTitle,
-    ad.description?.split(/[.!?]/)[0]?.trim() || angle,
-    brandDesc.slice(0, 80) || angle,
-  ].filter(Boolean);
-  const unique = [...new Set(copies)];
-  return { audience, angle, concept, copies: unique.length ? unique : [angle] };
+/** Call Claude to generate unique audience, angle, concept and copy variations from research */
+async function synthesizeWithClaude(
+  apiKey: string,
+  productName: string,
+  brand: { title?: string; description?: string },
+  ad: { title?: string; description?: string }
+): Promise<{ audience: string; angle: string; concept: string; copies: string[] }> {
+  const brandText = [brand.title, brand.description].filter(Boolean).join("\n");
+  const adText = [ad.title, ad.description].filter(Boolean).join("\n");
+  const prompt = `Du er en ekspert i annonce-strategi og markedsresearch. Baseret på webshop/brand og reference-annonce nedenfor, udled UNIKKE koncepter (ikke generiske).
+
+Produkt: ${productName}
+
+Webshop/brand:
+${brandText || "(ingen)"}
+
+Reference Facebook-ad (tekst/titel):
+${adText || "(ingen)"}
+
+Svar KUN med ét JSON-objekt uden markdown, med nøglerne: audience, angle, concept, copies.
+- audience: én sætning der beskriver målgruppen (demografisk + behov).
+- angle: ét stærkt, unikt salgsargument/hook (kort).
+- concept: ét ord eller kort frase for det kreative koncept (fx Lifestyle, Offer, Before/after, Testimonial).
+- copies: array af 4–6 korte, forskellige annoncetekster/headlines til variationer (på dansk hvis brand/ad er dansk).
+
+Eksempel-format: {"audience":"...","angle":"...","concept":"...","copies":["...","..."]}`;
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Claude API: ${res.status} ${err}`);
+  }
+  const data = (await res.json()) as { content?: { type: string; text?: string }[] };
+  const text = data.content?.[0]?.type === "text" ? data.content[0].text : "";
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("Claude returnerede ikke JSON");
+  const parsed = JSON.parse(jsonMatch[0]) as { audience?: string; angle?: string; concept?: string; copies?: string[] };
+  return {
+    audience: typeof parsed.audience === "string" ? parsed.audience : "Målgruppe fra research",
+    angle: typeof parsed.angle === "string" ? parsed.angle : "Hook fra reference-ad",
+    concept: typeof parsed.concept === "string" ? parsed.concept : "Lifestyle",
+    copies: Array.isArray(parsed.copies) && parsed.copies.length
+      ? parsed.copies.slice(0, 8).filter((c): c is string => typeof c === "string")
+      : [parsed.angle || "Headline"],
+  };
+}
+
+/** Nano Banana Pro 2 (defapi.org): text-to-image, poll until done, return image URL */
+async function generateImageNanoBanana(
+  apiKey: string,
+  prompt: string,
+  options: { width: number; height: number; model?: string; baseUrl?: string }
+): Promise<string> {
+  const baseUrl = (options.baseUrl || "https://api.defapi.org").replace(/\/$/, "");
+  const model = options.model || "google/gempix2";
+  const res = await fetch(`${baseUrl}/api/image/gen`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      prompt: `${prompt}. High quality, professional ad creative, ${options.width}x${options.height} aspect ratio.`,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Nano Banana API: ${res.status} ${err}`);
+  }
+  const data = (await res.json()) as { code?: number; data?: { task_id?: string } };
+  const taskId = data.data?.task_id;
+  if (!taskId) throw new Error("Nano Banana: no task_id");
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const statusRes = await fetch(`${baseUrl}/api/task/query?task_id=${encodeURIComponent(taskId)}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!statusRes.ok) continue;
+    const statusData = (await statusRes.json()) as {
+      data?: { status?: string; result?: { image?: string }[] };
+    };
+    const status = statusData.data?.status;
+    if (status === "success" && statusData.data?.result?.[0]?.image) {
+      return statusData.data.result[0].image;
+    }
+    if (status === "failed") throw new Error("Nano Banana: image generation failed");
+  }
+  throw new Error("Nano Banana: timeout waiting for image");
 }
 
 export const analyzeAd = action({
@@ -253,11 +349,11 @@ export const analyzeAd = action({
     let adContext: { title?: string; description?: string; image?: string } = {};
     adContext = await fetchPageContext(adUrl);
 
-    const { audience, angle, concept, copies } = synthesizeFromResearch(
-      productName,
-      brandContext,
-      adContext
-    );
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const { audience, angle, concept, copies } =
+      anthropicKey?.trim()
+        ? await synthesizeWithClaude(anthropicKey, productName, brandContext, adContext)
+        : synthesizeFromResearchFallback(productName, brandContext, adContext);
 
     const hook = adContext.description?.slice(0, 120) || adContext.title || angle;
     const visualStructure = adContext.image ? "Image-based creative" : "Lifestyle / product shot";
@@ -317,6 +413,7 @@ export const generateAds = action({
     let angle: string | undefined;
     let concepts: string | undefined;
     let copies: string[] | undefined;
+    let brandContext: string | undefined;
     if (analyzedJson) {
       try {
         const a = JSON.parse(analyzedJson) as {
@@ -324,6 +421,7 @@ export const generateAds = action({
           angle?: string;
           concept?: string;
           copies?: string[];
+          brandContext?: string;
           hook?: string;
           title?: string;
           description?: string;
@@ -332,8 +430,40 @@ export const generateAds = action({
         angle = a.angle ?? a.hook;
         concepts = a.concept ?? (a.title ? "From reference ad" : "Lifestyle");
         copies = a.copies?.length ? a.copies : a.hook ? [a.hook, a.angle ?? "", a.description?.slice(0, 80) ?? ""].filter(Boolean) : undefined;
+        brandContext = a.brandContext;
       } catch {
         // ignore parse error
+      }
+    }
+
+    const nanoBananaKey = process.env.NANO_BANANA_API_KEY?.trim();
+    const nanoBananaUrl = process.env.NANO_BANANA_API_URL?.trim();
+    const nanoBananaModel = process.env.NANO_BANANA_MODEL?.trim();
+    const copyList = copies?.length ? copies : [angle ?? "Product", "Offer", "Lifestyle"];
+    let imageUrls: string[] | undefined;
+    if (nanoBananaKey && angle) {
+      imageUrls = [];
+      for (let i = 0; i < variations; i++) {
+        const copyLine = copyList[i % copyList.length];
+        const prompt = [
+          brandContext || "",
+          `Ad concept: ${angle}. Headline: ${copyLine}.`,
+          args.customInstructions || "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        try {
+          const url = await generateImageNanoBanana(nanoBananaKey, prompt, {
+            width: dims.w,
+            height: dims.h,
+            model: nanoBananaModel || undefined,
+            baseUrl: nanoBananaUrl || undefined,
+          });
+          imageUrls.push(url);
+        } catch (e) {
+          console.error(`Nano Banana image ${i + 1} failed:`, e);
+          imageUrls.push(`https://placehold.co/${dims.w}x${dims.h}/1f2937/8b5cf6?text=Ad+${i + 1}`);
+        }
       }
     }
 
@@ -350,6 +480,7 @@ export const generateAds = action({
       angle,
       concepts,
       copies,
+      imageUrls,
     });
     return { creativeSetId };
   },
