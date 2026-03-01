@@ -2,11 +2,36 @@ import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { ProductGrid } from "@/components/products/ProductGrid";
 import { CreateProductButton } from "@/components/products/CreateProductButton";
+import { ConvexSetupRequired } from "@/components/ConvexSetupRequired";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProductsPage() {
-  const products = await fetchQuery(api.products.list, {});
+  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+  if (!convexUrl) {
+    return <ConvexSetupRequired />;
+  }
+
+  let products;
+  try {
+    products = await fetchQuery(api.products.list, {});
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return (
+      <div className="p-6 max-w-2xl mx-auto">
+        <div className="gro-card p-6 border-red-500/30 bg-red-500/5">
+          <h1 className="text-lg font-semibold text-white mb-2">Kunne ikke hente data fra Convex</h1>
+          <p className="text-zinc-400 text-sm mb-2">Fejlbesked:</p>
+          <pre className="p-3 bg-zinc-900 rounded text-sm text-red-300 overflow-auto mb-4">
+            {message}
+          </pre>
+          <p className="text-zinc-500 text-xs">
+            Tjek at NEXT_PUBLIC_CONVEX_URL på Vercel peger på din Convex deployment (Health → Cloud URL), og at du har kørt &quot;npx convex dev&quot; så schema og functions er pushet.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
