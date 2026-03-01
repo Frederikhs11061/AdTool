@@ -65,8 +65,10 @@ export default defineSchema({
   }).index("by_set", ["creativeSetId"]),
 
   // Winner ads / ad library: reference-billeder systemet trækker på ved generering
+  // Billeder kan være ekstern URL (imageUrl) eller upload til Convex (storageId → imageUrl sættes fra getUrl)
   winnerAds: defineTable({
     imageUrl: v.string(),
+    storageId: v.optional(v.id("_storage")),
     headline: v.string(),
     bodyCopy: v.optional(v.string()),
     angle: v.optional(v.string()),

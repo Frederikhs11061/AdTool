@@ -2,6 +2,40 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
+/** Kortvarig upload-URL til fil-upload (brug i klient: POST fil → få storageId → kald addWithFile) */
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => ctx.storage.generateUploadUrl(),
+});
+
+/** Tilføj winner ad med billede uploadet til Convex (fil lagres i DB – hurtigt, adgang til alt) */
+export const addWithFile = mutation({
+  args: {
+    storageId: v.id("_storage"),
+    headline: v.string(),
+    bodyCopy: v.optional(v.string()),
+    angle: v.optional(v.string()),
+    concept: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    productId: v.optional(v.id("products")),
+  },
+  handler: async (ctx, args) => {
+    const imageUrl = await ctx.storage.getUrl(args.storageId);
+    if (!imageUrl) throw new Error("Kunne ikke hente URL for uploadet fil");
+    return ctx.db.insert("winnerAds", {
+      imageUrl,
+      storageId: args.storageId,
+      headline: args.headline.trim(),
+      bodyCopy: args.bodyCopy?.trim() ?? undefined,
+      angle: args.angle?.trim() ?? undefined,
+      concept: args.concept?.trim() ?? undefined,
+      sourceUrl: args.sourceUrl?.trim() ?? undefined,
+      productId: args.productId ?? undefined,
+      createdAt: Date.now(),
+    });
+  },
+});
+
 /** Liste over alle winner ads (global + evt. filtreret på produkt) */
 export const list = query({
   args: {
@@ -41,10 +75,12 @@ export const add = mutation({
   },
 });
 
-/** Slet en winner ad */
+/** Slet en winner ad (og evt. fil fra storage) */
 export const remove = mutation({
   args: { id: v.id("winnerAds") },
   handler: async (ctx, { id }) => {
+    const ad = await ctx.db.get(id);
+    if (ad?.storageId) await ctx.storage.delete(ad.storageId);
     await ctx.db.delete(id);
   },
 });

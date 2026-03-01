@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { Plus, Trash2, Upload } from "lucide-react";
+import { ImageIcon, Plus, Trash2, Upload } from "lucide-react";
 
 export default function WinnerAdsPage() {
   const list = useQuery(api.winnerAds.list, { limit: 200 });
   const addOne = useMutation(api.winnerAds.add);
+  const addWithFile = useMutation(api.winnerAds.addWithFile);
+  const generateUploadUrl = useMutation(api.winnerAds.generateUploadUrl);
   const addBulk = useMutation(api.winnerAds.addBulk);
   const remove = useMutation(api.winnerAds.remove);
 
@@ -16,8 +18,11 @@ export default function WinnerAdsPage() {
   const [headline, setHeadline] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [bulkText, setBulkText] = useState("");
+  const [fileHeadline, setFileHeadline] = useState("");
   const [adding, setAdding] = useState(false);
   const [bulking, setBulking] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleAddOne(e: React.FormEvent) {
     e.preventDefault();
@@ -58,11 +63,37 @@ export default function WinnerAdsPage() {
     }
   }
 
+  async function handleFileUpload(e: React.FormEvent) {
+    e.preventDefault();
+    const files = fileInputRef.current?.files;
+    if (!files?.length || !fileHeadline.trim()) return;
+    setUploading(true);
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.type.startsWith("image/")) continue;
+        const postUrl = await generateUploadUrl();
+        const result = await fetch(postUrl, { method: "POST", headers: { "Content-Type": file.type }, body: file });
+        const { storageId } = await result.json();
+        if (storageId) await addWithFile({ storageId, headline: fileHeadline.trim() });
+      }
+      setFileHeadline("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-semibold text-white mb-2">Winner ads</h1>
-      <p className="text-zinc-400 text-sm mb-4">
-        Reference-billeder systemet trækker på ved generering (Claude + billedgen). Kun billeder – video ignoreres. Fra fx Foreplay: højreklik på billede → Kopiér billedadresse, indsæt her med en kort headline. Flere ads = bedre træk på databasen.
+      <h1 className="text-2xl font-semibold text-white mb-2 flex items-center gap-2">
+        <ImageIcon className="w-7 h-7" /> Winner ads
+      </h1>
+      <p className="text-zinc-400 text-sm mb-1">
+        Side findes i <strong className="text-zinc-300">venstre menu: Winner ads</strong>. Reference-billeder lagres i databasen – systemet trækker på dem ved generering (Claude + billedgen). Kun billeder.
+      </p>
+      <p className="text-zinc-500 text-sm mb-4">
+        Upload filer her (lagres i Convex – hurtigt, adgang til alt) eller indsæt billed-URL + headline. Flere ads = bedre træk.
       </p>
       <details className="mb-6 text-sm">
         <summary className="text-zinc-500 cursor-pointer hover:text-zinc-400">Foreplay-board links (åbn og kopiér billed-URLs)</summary>
@@ -87,10 +118,38 @@ export default function WinnerAdsPage() {
         </ul>
       </details>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div className="gro-card p-5">
           <h2 className="font-medium text-white mb-3 flex items-center gap-2">
-            <Plus className="w-4 h-4" /> Tilføj én winner ad
+            <Upload className="w-4 h-4" /> Upload filer (i databasen)
+          </h2>
+          <p className="text-xs text-zinc-500 mb-3">
+            Billeder lagres i Convex – hurtig adgang, ingen eksterne links.
+          </p>
+          <form onSubmit={handleFileUpload} className="space-y-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="gro-input w-full text-sm file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-gro-purple/20 file:text-gro-purple"
+            />
+            <input
+              type="text"
+              placeholder="Headline (bruges til alle valgte filer)"
+              value={fileHeadline}
+              onChange={(e) => setFileHeadline(e.target.value)}
+              className="gro-input w-full"
+              required
+            />
+            <button type="submit" disabled={uploading} className="gro-btn-primary w-full py-2 disabled:opacity-50">
+              {uploading ? "Uploader…" : "Upload til DB"}
+            </button>
+          </form>
+        </div>
+        <div className="gro-card p-5">
+          <h2 className="font-medium text-white mb-3 flex items-center gap-2">
+            <Plus className="w-4 h-4" /> Tilføj én (billed-URL)
           </h2>
           <form onSubmit={handleAddOne} className="space-y-3">
             <input
