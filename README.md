@@ -22,6 +22,8 @@ Et værktøj til at generere annonce-creatives ud fra produkter og Meta Ads Libr
 
 ## Convex (database + backend)
 
+> Efter ændring af env vars på Vercel: lav Redeploy under Deployments, så build får de nye værdier.
+
 Projektet bruger [Convex](https://convex.dev) som backend. Convex har et **generøst gratis tier** og er ofte billigere end at køre egen Postgres.
 
 1. Opret en konto på [convex.dev](https://convex.dev) (gratis).
