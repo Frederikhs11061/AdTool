@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { ImageIcon, Plus, Trash2, Upload } from "lucide-react";
@@ -13,25 +13,26 @@ export default function WinnerAdsPage() {
   const generateUploadUrl = useMutation(api.winnerAds.generateUploadUrl);
   const addBulk = useMutation(api.winnerAds.addBulk);
   const remove = useMutation(api.winnerAds.remove);
+  const analyzeWinnerAdImages = useAction(api.actions.analyzeWinnerAdImages);
 
   const [imageUrl, setImageUrl] = useState("");
   const [headline, setHeadline] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [bulkText, setBulkText] = useState("");
-  const [fileHeadline, setFileHeadline] = useState("");
   const [adding, setAdding] = useState(false);
   const [bulking, setBulking] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleAddOne(e: React.FormEvent) {
     e.preventDefault();
-    if (!imageUrl.trim() || !headline.trim()) return;
+    if (!imageUrl.trim()) return;
     setAdding(true);
     try {
       await addOne({
         imageUrl: imageUrl.trim(),
-        headline: headline.trim(),
+        headline: headline.trim() || undefined,
         sourceUrl: sourceUrl.trim() || undefined,
       });
       setImageUrl("");
@@ -48,10 +49,10 @@ export default function WinnerAdsPage() {
       .map((s) => s.trim())
       .filter(Boolean);
     if (!lines.length) return;
-    const ads: { imageUrl: string; headline: string }[] = [];
+    const ads: { imageUrl: string; headline?: string }[] = [];
     for (const line of lines) {
       const [url, ...rest] = line.split(/\t|,/).map((s) => s.trim());
-      if (url) ads.push({ imageUrl: url, headline: rest.join(" ").trim() || "Winner ad" });
+      if (url) ads.push({ imageUrl: url, headline: rest.join(" ").trim() || undefined });
     }
     if (!ads.length) return;
     setBulking(true);
@@ -66,8 +67,9 @@ export default function WinnerAdsPage() {
   async function handleFileUpload(e: React.FormEvent) {
     e.preventDefault();
     const files = fileInputRef.current?.files;
-    if (!files?.length || !fileHeadline.trim()) return;
+    if (!files?.length) return;
     setUploading(true);
+    const newIds: Id<"winnerAds">[] = [];
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -75,10 +77,20 @@ export default function WinnerAdsPage() {
         const postUrl = await generateUploadUrl();
         const result = await fetch(postUrl, { method: "POST", headers: { "Content-Type": file.type }, body: file });
         const { storageId } = await result.json();
-        if (storageId) await addWithFile({ storageId, headline: fileHeadline.trim() });
+        if (storageId) {
+          const id = await addWithFile({ storageId });
+          newIds.push(id);
+        }
       }
-      setFileHeadline("");
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (newIds.length) {
+        setAnalyzing(true);
+        try {
+          await analyzeWinnerAdImages({ ids: newIds });
+        } finally {
+          setAnalyzing(false);
+        }
+      }
     } finally {
       setUploading(false);
     }
@@ -93,7 +105,7 @@ export default function WinnerAdsPage() {
         Side findes i <strong className="text-zinc-300">venstre menu: Winner ads</strong>. Reference-billeder lagres i databasen – systemet trækker på dem ved generering (Claude + billedgen). Kun billeder.
       </p>
       <p className="text-zinc-500 text-sm mb-4">
-        Upload filer her (lagres i Convex – hurtigt, adgang til alt) eller indsæt billed-URL + headline. Flere ads = bedre træk.
+        Upload bare billeder – AI analyserer format, struktur, angle, concept og audience og bruger det ved generering. Eller indsæt billed-URL (headline valgfri).
       </p>
       <details className="mb-6 text-sm">
         <summary className="text-zinc-500 cursor-pointer hover:text-zinc-400">Foreplay-board links (åbn og kopiér billed-URLs)</summary>
@@ -121,10 +133,10 @@ export default function WinnerAdsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <div className="gro-card p-5">
           <h2 className="font-medium text-white mb-3 flex items-center gap-2">
-            <Upload className="w-4 h-4" /> Upload filer (i databasen)
+            <Upload className="w-4 h-4" /> Upload billeder (ALT)
           </h2>
           <p className="text-xs text-zinc-500 mb-3">
-            Billeder lagres i Convex – hurtig adgang, ingen eksterne links.
+            Vælg én eller mange billeder. De lagres i DB og AI analyserer automatisk headline, angle og concept.
           </p>
           <form onSubmit={handleFileUpload} className="space-y-3">
             <input
@@ -134,16 +146,8 @@ export default function WinnerAdsPage() {
               multiple
               className="gro-input w-full text-sm file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-gro-purple/20 file:text-gro-purple"
             />
-            <input
-              type="text"
-              placeholder="Headline (bruges til alle valgte filer)"
-              value={fileHeadline}
-              onChange={(e) => setFileHeadline(e.target.value)}
-              className="gro-input w-full"
-              required
-            />
-            <button type="submit" disabled={uploading} className="gro-btn-primary w-full py-2 disabled:opacity-50">
-              {uploading ? "Uploader…" : "Upload til DB"}
+            <button type="submit" disabled={uploading || analyzing} className="gro-btn-primary w-full py-2 disabled:opacity-50">
+              {uploading ? "Uploader…" : analyzing ? "Analyserer med AI…" : "Upload og analysér"}
             </button>
           </form>
         </div>
@@ -162,15 +166,14 @@ export default function WinnerAdsPage() {
             />
             <input
               type="text"
-              placeholder="Headline / kort beskrivelse"
+              placeholder="Headline (valgfri – AI kan analysere)"
               value={headline}
               onChange={(e) => setHeadline(e.target.value)}
               className="gro-input w-full"
-              required
             />
             <input
               type="url"
-              placeholder="Kilde-URL (valgfri, fx Foreplay-board)"
+              placeholder="Kilde-URL (valgfri)"
               value={sourceUrl}
               onChange={(e) => setSourceUrl(e.target.value)}
               className="gro-input w-full"
@@ -186,10 +189,10 @@ export default function WinnerAdsPage() {
             <Upload className="w-4 h-4" /> Bulk-import
           </h2>
           <p className="text-xs text-zinc-500 mb-2">
-            Én linje per ad: <code className="bg-zinc-800 px-1 rounded">billedURL</code> tab eller komma <code className="bg-zinc-800 px-1 rounded">headline</code>
+            Én linje per ad: <code className="bg-zinc-800 px-1 rounded">billedURL</code> (evt. tab/komma headline – ellers kan AI analysere bagefter)
           </p>
           <textarea
-            placeholder={"https://eksempel.dk/billede1.jpg\tHeadline 1\nhttps://eksempel.dk/billede2.jpg\tHeadline 2"}
+            placeholder={"https://eksempel.dk/billede1.jpg\nhttps://eksempel.dk/billede2.jpg\tHeadline 2"}
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
             className="gro-input w-full min-h-[120px] resize-y font-mono text-sm"
@@ -212,7 +215,7 @@ export default function WinnerAdsPage() {
         </h2>
         {!list?.length ? (
           <div className="gro-card p-8 text-center text-zinc-500">
-            Ingen winner ads endnu. Tilføj billed-URL + headline ovenfor, eller importer fra Foreplay/andre kilder (kopiér billed-URLs og headlines).
+            Ingen winner ads endnu. Upload billeder eller indsæt billed-URLs – AI kan analysere resten.
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -236,8 +239,8 @@ export default function WinnerAdsPage() {
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
-                <p className="p-2 text-xs text-zinc-300 truncate" title={ad.headline}>
-                  {ad.headline}
+                <p className="p-2 text-xs text-zinc-300 truncate" title={ad.headline ?? ad.angle ?? "Winner ad"}>
+                  {ad.headline || ad.angle || "Analyserer…"}
                 </p>
               </div>
             ))}

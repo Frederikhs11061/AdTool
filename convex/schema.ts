@@ -69,7 +69,7 @@ export default defineSchema({
   winnerAds: defineTable({
     imageUrl: v.string(),
     storageId: v.optional(v.id("_storage")),
-    headline: v.string(),
+    headline: v.optional(v.string()),
     bodyCopy: v.optional(v.string()),
     angle: v.optional(v.string()),
     concept: v.optional(v.string()),

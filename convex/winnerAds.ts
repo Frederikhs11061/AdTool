@@ -8,11 +8,11 @@ export const generateUploadUrl = mutation({
   handler: async (ctx) => ctx.storage.generateUploadUrl(),
 });
 
-/** Tilføj winner ad med billede uploadet til Convex (fil lagres i DB – hurtigt, adgang til alt) */
+/** Tilføj winner ad med billede uploadet til Convex (fil lagres i DB). Headline valgfri – AI kan analysere bagefter. */
 export const addWithFile = mutation({
   args: {
     storageId: v.id("_storage"),
-    headline: v.string(),
+    headline: v.optional(v.string()),
     bodyCopy: v.optional(v.string()),
     angle: v.optional(v.string()),
     concept: v.optional(v.string()),
@@ -25,7 +25,7 @@ export const addWithFile = mutation({
     return ctx.db.insert("winnerAds", {
       imageUrl,
       storageId: args.storageId,
-      headline: args.headline.trim(),
+      headline: args.headline?.trim() ?? undefined,
       bodyCopy: args.bodyCopy?.trim() ?? undefined,
       angle: args.angle?.trim() ?? undefined,
       concept: args.concept?.trim() ?? undefined,
@@ -33,6 +33,16 @@ export const addWithFile = mutation({
       productId: args.productId ?? undefined,
       createdAt: Date.now(),
     });
+  },
+});
+
+/** Hent én winner ad (til analyse-action) */
+export const getOne = query({
+  args: { id: v.id("winnerAds") },
+  handler: async (ctx, { id }) => {
+    const doc = await ctx.db.get(id);
+    if (!doc) return null;
+    return { ...doc, id: doc._id };
   },
 });
 
@@ -51,11 +61,33 @@ export const list = query({
   },
 });
 
-/** Tilføj én winner ad */
+/** Opdater winner ad efter AI-analyse (headline, angle, concept) */
+export const updateAnalyzed = mutation({
+  args: {
+    id: v.id("winnerAds"),
+    headline: v.optional(v.string()),
+    angle: v.optional(v.string()),
+    concept: v.optional(v.string()),
+    bodyCopy: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { id, ...updates } = args;
+    const doc = await ctx.db.get(id);
+    if (!doc) return;
+    await ctx.db.patch(id, {
+      ...(updates.headline !== undefined && { headline: updates.headline }),
+      ...(updates.angle !== undefined && { angle: updates.angle }),
+      ...(updates.concept !== undefined && { concept: updates.concept }),
+      ...(updates.bodyCopy !== undefined && { bodyCopy: updates.bodyCopy }),
+    });
+  },
+});
+
+/** Tilføj én winner ad (headline valgfri – AI kan analysere) */
 export const add = mutation({
   args: {
     imageUrl: v.string(),
-    headline: v.string(),
+    headline: v.optional(v.string()),
     bodyCopy: v.optional(v.string()),
     angle: v.optional(v.string()),
     concept: v.optional(v.string()),
@@ -64,7 +96,8 @@ export const add = mutation({
   },
   handler: async (ctx, args) => {
     return ctx.db.insert("winnerAds", {
-      ...args,
+      imageUrl: args.imageUrl,
+      headline: args.headline?.trim() ?? undefined,
       bodyCopy: args.bodyCopy ?? undefined,
       angle: args.angle ?? undefined,
       concept: args.concept ?? undefined,
@@ -85,13 +118,13 @@ export const remove = mutation({
   },
 });
 
-/** Bulk-tilføj: array af { imageUrl, headline, bodyCopy?, angle?, concept?, sourceUrl? } */
+/** Bulk-tilføj: array af { imageUrl, headline?, ... } – headline valgfri, AI kan analysere */
 export const addBulk = mutation({
   args: {
     ads: v.array(
       v.object({
         imageUrl: v.string(),
-        headline: v.string(),
+        headline: v.optional(v.string()),
         bodyCopy: v.optional(v.string()),
         angle: v.optional(v.string()),
         concept: v.optional(v.string()),
@@ -106,7 +139,7 @@ export const addBulk = mutation({
     for (const a of ads) {
       const id = await ctx.db.insert("winnerAds", {
         imageUrl: a.imageUrl.trim(),
-        headline: a.headline.trim(),
+        headline: a.headline?.trim() ?? undefined,
         bodyCopy: a.bodyCopy?.trim() ?? undefined,
         angle: a.angle?.trim() ?? undefined,
         concept: a.concept?.trim() ?? undefined,

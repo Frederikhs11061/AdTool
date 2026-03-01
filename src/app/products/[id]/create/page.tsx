@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -18,9 +18,17 @@ const STEPS: { id: Step; label: string; sublabel?: string }[] = [
   { id: "settings", label: "Settings", sublabel: "" },
 ];
 
+const REMIX_HINTS: Record<string, string> = {
+  angles: "Nye angles og hooks",
+  concepts: "Nye kreative koncepter",
+  audience: "Anden målgruppe",
+};
+
 export default function CreateAdsPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const productId = params?.id as string | undefined;
+  const remix = searchParams?.get("remix") ?? null;
   const [step, setStep] = useState<Step>("start");
   const [adLibraryUrl, setAdLibraryUrl] = useState("");
   const [adType, setAdType] = useState<"variations" | "new_ads" | null>(null);
@@ -32,6 +40,13 @@ export default function CreateAdsPage() {
   const [generating, setGenerating] = useState(false);
   const [analyzed, setAnalyzed] = useState<{ angle: string; hook: string; audience?: string; concept?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (remix && REMIX_HINTS[remix]) {
+      setCustomInstructions((prev) => (prev ? prev : `Fokusér på: ${REMIX_HINTS[remix]}.`));
+      setStep("source");
+    }
+  }, [remix]);
 
   const router = useRouter();
   const analyzeAd = useAction(api.actions.analyzeAd);
@@ -113,6 +128,12 @@ export default function CreateAdsPage() {
             <X className="w-5 h-5" />
           </Link>
         </div>
+
+        {remix && REMIX_HINTS[remix] && (
+          <div className="px-4 py-2 bg-gro-purple/10 border-b border-gro-purple/20 text-sm text-gro-purple">
+            Remix: {REMIX_HINTS[remix]}. Indsæt ad-URL og kør Lookup, derefter kan du justere Custom instructions og trykke Generate.
+          </div>
+        )}
 
         {step === "start" && (
           <div className="p-8">

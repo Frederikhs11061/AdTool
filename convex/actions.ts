@@ -365,7 +365,7 @@ export const analyzeAd = action({
 
     const winnerAdsList = await ctx.runQuery(api.winnerAds.list, { productId, limit: 12 });
     const winnerAdsForClaude: WinnerAd[] = winnerAdsList.map((w) => ({
-      headline: w.headline,
+      headline: w.headline ?? "",
       bodyCopy: w.bodyCopy,
       angle: w.angle ?? undefined,
       concept: w.concept ?? undefined,
@@ -599,5 +599,103 @@ export const runResearch = action({
       confidence: 90,
     });
     return { ok: true };
+  },
+});
+
+/** ArrayBuffer → base64 (Convex default runtime har ikke Buffer) */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 1024;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const end = Math.min(i + chunkSize, bytes.length);
+    for (let j = i; j < end; j++) binary += String.fromCharCode(bytes[j]!);
+  }
+  return btoa(binary);
+}
+
+/** Hent billede som base64 + media type (til Claude vision) */
+async function fetchImageAsBase64(imageUrl: string): Promise<{ data: string; mediaType: string }> {
+  const res = await fetch(imageUrl);
+  if (!res.ok) throw new Error(`Kunne ikke hente billede: ${res.status}`);
+  const contentType = res.headers.get("content-type") || "image/jpeg";
+  const mediaType = contentType.split(";")[0].trim();
+  const allowed = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+  const finalType = allowed.some((t) => mediaType.toLowerCase().startsWith(t.split("/")[0])) ? mediaType : "image/jpeg";
+  const buf = await res.arrayBuffer();
+  const base64 = arrayBufferToBase64(buf);
+  return { data: base64, mediaType: finalType };
+}
+
+/** Analysér ét winner-ad-billede med Claude (vision): udtræk headline, angle, concept, struktur */
+async function analyzeImageWithClaude(
+  apiKey: string,
+  imageUrl: string
+): Promise<{ headline: string; angle: string; concept: string }> {
+  const { data, mediaType } = await fetchImageAsBase64(imageUrl);
+  const prompt = `Analysér dette annoncebillede. Beskriv kort:
+- headline: én kort, catchy headline der passer til billedet (max 8 ord).
+- angle: salgsvinklen/hook (én kort sætning).
+- concept: kreativt koncept (ét ord eller kort frase, fx Lifestyle, UGC, Before/after, Offer, Testimonial).
+
+Svar KUN med ét JSON-objekt uden markdown: {"headline":"...","angle":"...","concept":"..."}`;
+
+  const content: { type: string; source?: { type: string; media_type: string; data: string }; text?: string }[] = [
+    { type: "image", source: { type: "base64", media_type: mediaType, data } },
+    { type: "text", text: prompt },
+  ];
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 512,
+      messages: [{ role: "user", content }],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Claude vision: ${res.status} ${err}`);
+  }
+  const data2 = (await res.json()) as { content?: { type: string; text?: string }[] };
+  const text = (data2.content?.[0]?.type === "text" ? data2.content[0].text : undefined) ?? "";
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("Claude returnerede ikke JSON");
+  const parsed = JSON.parse(jsonMatch[0]) as { headline?: string; angle?: string; concept?: string };
+  return {
+    headline: typeof parsed.headline === "string" ? parsed.headline.slice(0, 120) : "Winner ad",
+    angle: typeof parsed.angle === "string" ? parsed.angle.slice(0, 200) : "",
+    concept: typeof parsed.concept === "string" ? parsed.concept.slice(0, 80) : "Lifestyle",
+  };
+}
+
+/** Analysér winner ads (billeder) med AI og opdater headline, angle, concept i DB */
+export const analyzeWinnerAdImages = action({
+  args: { ids: v.array(v.id("winnerAds")) },
+  handler: async (ctx, { ids }): Promise<{ analyzed: number; failed: number }> => {
+    const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+    if (!apiKey) throw new Error("ANTHROPIC_API_KEY mangler – kan ikke analysere billeder");
+    let analyzed = 0;
+    let failed = 0;
+    for (const id of ids) {
+      const ad = await ctx.runQuery(api.winnerAds.getOne, { id });
+      if (!ad?.imageUrl) {
+        failed += 1;
+        continue;
+      }
+      try {
+        const { headline, angle, concept } = await analyzeImageWithClaude(apiKey, ad.imageUrl);
+        await ctx.runMutation(api.winnerAds.updateAnalyzed, { id, headline, angle, concept });
+        analyzed += 1;
+      } catch (e) {
+        console.error(`Analyse winner ad ${id} fejlede:`, e);
+        failed += 1;
+      }
+    }
+    return { analyzed, failed };
   },
 });
