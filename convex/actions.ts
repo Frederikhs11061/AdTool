@@ -1,6 +1,16 @@
 import { v } from "convex/values";
-import { action, internalMutation } from "./_generated/server";
+import { action } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
+
+type InternalApi = {
+  actions: {
+    insertAnalyzeAction: import("convex/server").FunctionReference<"mutation", "internal", { productId: Id<"products">; adLibraryUrl: string; analyzedAd: string }, Id<"adActions">>;
+    insertGenerateResult: import("convex/server").FunctionReference<"mutation", "internal", Record<string, unknown>, Id<"creativeSets">>;
+    upsertIntelligence: import("convex/server").FunctionReference<"mutation", "internal", Record<string, unknown>, void>;
+    getProduct: import("convex/server").FunctionReference<"query", "internal", { productId: Id<"products"> }, { name: string } | null>;
+  };
+};
 
 const FORMAT_DIMENSIONS: Record<string, { w: number; h: number }> = {
   "1080x1080": { w: 1080, h: 1080 },
@@ -13,14 +23,17 @@ export const analyzeAd = action({
     productId: v.id("products"),
     adLibraryUrl: v.string(),
   },
-  handler: async (ctx, { productId, adLibraryUrl }) => {
+  handler: async (
+    ctx,
+    { productId, adLibraryUrl }
+  ): Promise<{ actionId: Id<"adActions">; analyzed: { angle: string; hook: string; visualStructure: string; cta: string } }> => {
     const analyzedAd = {
       angle: "Pain relief / transformation",
       hook: "Wake up without pain",
       visualStructure: "Lifestyle shot with product in scene",
       cta: "Shop now",
     };
-    const actionId = await ctx.runMutation(internal.actions.insertAnalyzeAction, {
+    const actionId = await ctx.runMutation((internal as InternalApi).actions.insertAnalyzeAction, {
       productId,
       adLibraryUrl: adLibraryUrl.trim(),
       analyzedAd: JSON.stringify(analyzedAd),
@@ -39,12 +52,12 @@ export const generateAds = action({
     format: v.optional(v.string()),
     customInstructions: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ creativeSetId: Id<"creativeSets"> }> => {
     const variations = Math.min(Math.max(1, args.variations ?? 9), 12);
     const format = args.format ?? "1080x1080";
     const dims = FORMAT_DIMENSIONS[format] ?? FORMAT_DIMENSIONS["1080x1080"];
 
-    const creativeSetId = await ctx.runMutation(internal.actions.insertGenerateResult, {
+    const creativeSetId = await ctx.runMutation((internal as InternalApi).actions.insertGenerateResult, {
       productId: args.productId,
       adLibraryUrl: args.adLibraryUrl ?? null,
       adType: args.adType,
@@ -60,8 +73,8 @@ export const generateAds = action({
 
 export const runResearch = action({
   args: { productId: v.id("products") },
-  handler: async (ctx, { productId }) => {
-    const product = await ctx.runQuery(internal.actions.getProduct, { productId });
+  handler: async (ctx, { productId }): Promise<{ ok: boolean }> => {
+    const product = await ctx.runQuery((internal as InternalApi).actions.getProduct, { productId });
     if (!product) throw new Error("Product not found");
 
     const keyFeatures = [
@@ -124,7 +137,7 @@ export const runResearch = action({
       "Compact enough for everyday carry while still delivering meaningful product volume",
     ];
 
-    await ctx.runMutation(internal.actions.upsertIntelligence, {
+    await ctx.runMutation((internal as InternalApi).actions.upsertIntelligence, {
       productId,
       keyFeatures: JSON.stringify(keyFeatures),
       keyBenefits: JSON.stringify(keyBenefits),
