@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import { useAction } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { X, Telescope, ClipboardList, Megaphone, Globe, Check } from "lucide-react";
 import { FORMATS, LANGUAGES } from "@/lib/utils";
 
@@ -29,6 +32,8 @@ export default function CreateAdsPage() {
   const [generating, setGenerating] = useState(false);
 
   const router = useRouter();
+  const analyzeAd = useAction(api.actions.analyzeAd);
+  const generateAds = useAction(api.actions.generateAds);
 
   const handleFromAdLibrary = () => {
     setStep("source");
@@ -42,16 +47,11 @@ export default function CreateAdsPage() {
     if (!adLibraryUrl.trim() || !productId) return;
     setAnalyzing(true);
     try {
-      const res = await fetch("/api/ads/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, adLibraryUrl: adLibraryUrl.trim() }),
-      });
-      if (!res.ok) throw new Error("Analyze failed");
+      await analyzeAd({ productId: productId as Id<"products">, adLibraryUrl: adLibraryUrl.trim() });
       setStep("type");
     } catch (e) {
       console.error(e);
-      setStep("type"); // still advance for demo
+      setStep("type");
     } finally {
       setAnalyzing(false);
     }
@@ -66,22 +66,16 @@ export default function CreateAdsPage() {
     if (!productId || !adType) return;
     setGenerating(true);
     try {
-      const res = await fetch("/api/ads/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productId,
-          adLibraryUrl: adLibraryUrl.trim() || undefined,
-          adType,
-          language,
-          variations,
-          format,
-          customInstructions: customInstructions.slice(0, 500) || undefined,
-        }),
+      const { creativeSetId } = await generateAds({
+        productId: productId as Id<"products">,
+        adLibraryUrl: adLibraryUrl.trim() || undefined,
+        adType,
+        language,
+        variations,
+        format,
+        customInstructions: customInstructions.slice(0, 500) || undefined,
       });
-      if (!res.ok) throw new Error("Generate failed");
-      const data = await res.json();
-      router.push(`/products/${productId}/creatives?set=${data.creativeSetId}`);
+      router.push(`/products/${productId}/creatives?set=${creativeSetId}`);
       router.refresh();
     } catch (e) {
       console.error(e);

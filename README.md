@@ -17,45 +17,52 @@ Et værktøj til at generere annonce-creatives ud fra produkter og Meta Ads Libr
 ## Tech stack
 
 - **Next.js 14** (App Router), **React 18**, **Tailwind CSS**
-- **Prisma** + **SQLite** (kan skiftes til Postgres)
+- **Convex** (backend + database – gratis tier, billig skala)
 - **Lucide** ikoner
+
+## Convex (database + backend)
+
+Projektet bruger [Convex](https://convex.dev) som backend. Convex har et **generøst gratis tier** og er ofte billigere end at køre egen Postgres.
+
+1. Opret en konto på [convex.dev](https://convex.dev) (gratis).
+2. I projektets rod:
+   ```bash
+   npx convex dev
+   ```
+   Log ind hvis du bliver bedt om det. Convex opretter et nyt projekt og genererer `convex/_generated/`. Du får en deployment-URL.
+3. Sæt i `.env.local`:
+   ```env
+   NEXT_PUBLIC_CONVEX_URL=<din Convex deployment URL>
+   ```
+   (`npx convex dev` kan ofte skrive denne fil for dig.)
+4. Kør appen:
+   ```bash
+   npm run dev
+   ```
 
 ## Kør lokalt
 
 ```bash
 npm install
-npx prisma generate
-npx prisma db push
+npx convex dev   # første gang: log ind og få NEXT_PUBLIC_CONVEX_URL
 npm run dev
 ```
 
 Åbn [http://localhost:3000](http://localhost:3000). Opret et produkt under Products, gå ind på det, og brug **Create Ads** for at gennemgå flowet.
 
-## API-er (udvidelser)
+## Deploy (Vercel)
 
-- **`/api/ads/analyze`**  
-  Analyserer en Meta Ads Library-URL. I dag bruges placeholder-logik; her kan du tilføje scrape eller officiel API og gemme angle/hook/visual.
+1. Push koden til GitHub og forbind Vercel til repoet.
+2. I Convex Dashboard: brug **Production** deployment og kopiér deployment-URL.
+3. I Vercel: **Settings → Environment Variables** → tilføj `NEXT_PUBLIC_CONVEX_URL` med den URL.
+4. Deploy. Ingen ekstra database (Postgres/Neon) er nødvendig – Convex håndterer alt.
 
-- **`/api/ads/generate`**  
-  Opretter et CreativeSet og N creatives. Billed-URL’er er i dag placeholders (`placehold.co`). Her kan du integrere **Nano Banana Pro 2** (eller anden image-gen API) og erstatte placeholder-URL’er med rigtige genererede billeder.
+## Udvidelser
 
-- **`/api/intelligence/research`**  
-  Kører “deep research” på produktet og udfylder Intelligence. I dag bruges template-data baseret på produktnavn; her kan du tilføje LLM + scrape af produkt-URL for rigtige features, offers og value proposition.
+- **Ad-analyse**: I `convex/actions.ts` (action `analyzeAd`) kan du tilføje kald til Meta Ads Library API eller scrape for rigtig ad-analyse.
+- **Billedgenerering**: I `convex/actions.internal.ts` (`insertGenerateResult`) kan du kalde fx **Nano Banana Pro 2** og gemme de genererede image-URL’er i stedet for placeholders.
+- **Intelligence/research**: I `convex/actions.ts` (action `runResearch`) kan du bruge LLM + scrape af produkt-URL for mere præcis research.
 
-## Nano Banana Pro 2
+## Øvrige env-variabler
 
-For rigtig billedgenerering/redigering kan du bruge fx:
-
-- [Nano Banana Pro API](https://nanobananaproapi.com/) eller  
-- [Replicate google/nano-banana-pro](https://replicate.com/google/nano-banana-pro)
-
-I `src/app/api/ads/generate/route.ts`: erstat loopet der opretter `Creative` med kald til din valgte API med prompt baseret på `analyzedAd`, product intelligence og `customInstructions`, og gem den returnerede image URL i `creative.imageUrl`.
-
-## Miljø
-
-Opret evt. `.env` med:
-
-- `DATABASE_URL` (ved brug af Postgres)
-- API-nøgler til image-gen og evt. LLM til research/analyze
-
-Prisma bruger som standard `file:./dev.db` (SQLite) uden ekstra env.
+- API-nøgler til image-gen og evt. LLM (valgfrit)

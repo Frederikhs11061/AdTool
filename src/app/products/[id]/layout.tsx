@@ -1,4 +1,6 @@
-import { prisma } from "@/lib/db";
+import { fetchQuery } from "convex/nextjs";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -14,7 +16,7 @@ export default async function ProductLayout({
   params: { id: string };
 }) {
   const { id } = params;
-  const product = await prisma.product.findUnique({ where: { id } });
+  const product = await fetchQuery(api.products.get, { id: id as Id<"products"> });
   if (!product) notFound();
 
   return (
@@ -51,7 +53,7 @@ export default async function ProductLayout({
             </div>
           </div>
         </div>
-        <ProductTabs productId={product.id} />
+        <ProductTabs productId={product._id} />
       </div>
       <div className="flex-1 max-w-6xl w-full mx-auto px-6 py-6">{children}</div>
     </div>

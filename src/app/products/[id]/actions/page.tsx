@@ -1,7 +1,20 @@
 import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { fetchQuery } from "convex/nextjs";
+import { api } from "@/convex/_generated/api";
 import { CreateAdsCard } from "@/components/product/CreateAdsCard";
 import { formatRelativeTime } from "@/lib/utils";
+import type { Id } from "@/convex/_generated/dataModel";
+
+type ActionRow = {
+  id: string;
+  createdAt: number;
+  adType?: string | null;
+  creativeSet?: {
+    id: string;
+    _count: { creatives: number };
+    creatives: { id: string; imageUrl: string }[];
+  } | null;
+};
 
 export const dynamic = "force-dynamic";
 
@@ -11,18 +24,7 @@ export default async function ProductActionsPage({
   params: { id: string };
 }) {
   const { id } = params;
-  const actions = await prisma.adAction.findMany({
-    where: { productId: id },
-    orderBy: { createdAt: "desc" },
-    include: {
-      creativeSet: {
-        include: {
-          creatives: { orderBy: { sortOrder: "asc" }, take: 3 },
-          _count: { select: { creatives: true } },
-        },
-      },
-    },
-  });
+  const actions = await fetchQuery(api.adActions.list, { productId: id as Id<"products"> });
 
   return (
     <div className="space-y-6">
@@ -40,14 +42,14 @@ export default async function ProductActionsPage({
           </select>
         </div>
         <ul className="space-y-3">
-          {actions.map((action) => (
+          {actions.map((action: ActionRow) => (
             <li key={action.id}>
               <Link
                 href={`/products/${id}/creatives?set=${action.creativeSet?.id ?? ""}`}
                 className="gro-card p-4 flex items-center gap-4 block hover:border-gro-purple/50 transition-colors"
               >
                 <div className="flex gap-1 shrink-0">
-                  {action.creativeSet?.creatives?.slice(0, 3).map((c) => (
+                  {action.creativeSet?.creatives?.map((c: { id: string; imageUrl: string }) => (
                     <div
                       key={c.id}
                       className="w-16 h-16 rounded bg-zinc-800 bg-cover bg-center"
@@ -73,7 +75,7 @@ export default async function ProductActionsPage({
                   </p>
                 </div>
                 <span className="text-xs text-zinc-500 shrink-0">
-                  {formatRelativeTime(action.createdAt)}
+                  {formatRelativeTime(new Date(action.createdAt))}
                 </span>
               </Link>
             </li>

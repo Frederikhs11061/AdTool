@@ -1,23 +1,24 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Plus } from "lucide-react";
 
 export function CreateProductButton() {
   const router = useRouter();
+  const createProduct = useMutation(api.products.create);
 
   async function handleCreate() {
     const name = window.prompt("Product name");
     if (!name?.trim()) return;
-    const res = await fetch("/api/products", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (!res.ok) return;
-    const { id } = await res.json();
-    router.push(`/products/${id}`);
-    router.refresh();
+    try {
+      const id = await createProduct({ name: name.trim() });
+      router.push(`/products/${id}`);
+      router.refresh();
+    } catch (e) {
+      console.error(e);
+    }
   }
 
   return (

@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAction } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { Loader2 } from "lucide-react";
 
 export function RunResearchButton({
@@ -13,16 +16,12 @@ export function RunResearchButton({
 }) {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const runResearch = useAction(api.actions.runResearch);
 
   async function handleRun() {
     setLoading(true);
     try {
-      const res = await fetch("/api/intelligence/research", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId }),
-      });
-      if (!res.ok) throw new Error("Research failed");
+      await runResearch({ productId: productId as Id<"products"> });
       router.refresh();
     } catch (e) {
       console.error(e);

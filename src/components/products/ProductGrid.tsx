@@ -1,11 +1,17 @@
 import Link from "next/link";
 import Image from "next/image";
 import { formatRelativeTime } from "@/lib/utils";
-import type { Product } from "@prisma/client";
 
-type ProductWithCount = Product & { _count: { creatives: number } };
+type ProductRow = {
+  id: string;
+  name: string;
+  imageUrl?: string | null;
+  status: string;
+  updatedAt: number;
+  _count: { creatives: number };
+};
 
-export function ProductGrid({ products }: { products: ProductWithCount[] }) {
+export function ProductGrid({ products }: { products: ProductRow[] }) {
   if (products.length === 0) {
     return (
       <div className="gro-card p-12 text-center">
@@ -43,7 +49,7 @@ export function ProductGrid({ products }: { products: ProductWithCount[] }) {
             <h2 className="font-medium text-white truncate">{product.name}</h2>
             <div className="flex items-center gap-2 mt-2">
               <span className="text-xs text-zinc-500">{product.status}</span>
-              <span className="text-xs text-zinc-600">Edited {formatRelativeTime(product.updatedAt)}</span>
+              <span className="text-xs text-zinc-600">Edited {formatRelativeTime(new Date(product.updatedAt))}</span>
             </div>
           </div>
         </Link>

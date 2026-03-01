@@ -1,17 +1,12 @@
-import { prisma } from "@/lib/db";
+import { fetchQuery } from "convex/nextjs";
+import { api } from "@/convex/_generated/api";
 import { ProductGrid } from "@/components/products/ProductGrid";
 import { CreateProductButton } from "@/components/products/CreateProductButton";
-import { formatRelativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProductsPage() {
-  const products = await prisma.product.findMany({
-    orderBy: { updatedAt: "desc" },
-    include: {
-      _count: { select: { creatives: true } },
-    },
-  });
+  const products = await fetchQuery(api.products.list, {});
 
   return (
     <div className="p-6 max-w-6xl mx-auto">

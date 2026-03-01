@@ -3,9 +3,13 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Shuffle, Lightbulb, Users } from "lucide-react";
-import type { CreativeSet, Creative } from "@prisma/client";
 
-type SetWithCreatives = CreativeSet & { creatives: Creative[] };
+type SetWithCreatives = {
+  audience?: string | null;
+  angle?: string | null;
+  concepts?: string | null;
+  creatives: { id: string; imageUrl: string; copy?: string | null }[];
+};
 
 export function CreativeSetDetail({
   productId,

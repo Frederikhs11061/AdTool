@@ -1,11 +1,13 @@
 import Link from "next/link";
 import Image from "next/image";
 import { formatRelativeTime } from "@/lib/utils";
-import type { CreativeSet, Creative } from "@prisma/client";
 
-type SetWithCreatives = CreativeSet & {
+type Creative = { id: string; imageUrl: string };
+type SetWithCreatives = {
+  id: string;
   creatives: Creative[];
   _count: { creatives: number };
+  createdAt: number;
 };
 
 export function CreativeSetGrid({
@@ -51,7 +53,7 @@ export function CreativeSetGrid({
             </div>
             <div className="p-3">
               <p className="text-xs text-zinc-500">
-                {set._count.creatives} creatives · {formatRelativeTime(set.createdAt)}
+                {set._count.creatives} creatives · {formatRelativeTime(new Date(set.createdAt))}
               </p>
             </div>
           </Link>

@@ -1,4 +1,3 @@
-import type { Product, ProductIntelligence } from "@prisma/client";
 import { Star, Check, Circle, ChevronUp } from "lucide-react";
 
 function parseJsonArray(s: string): string[] {
@@ -10,12 +9,26 @@ function parseJsonArray(s: string): string[] {
   }
 }
 
+type Product = { name: string };
+type Intelligence = {
+  keyFeatures: string;
+  keyBenefits: string;
+  targetPainPoints: string;
+  primaryUseCases: string;
+  targetScenarios: string;
+  offers: string;
+  valueProposition: string;
+  positioningStatement?: string | null;
+  uniqueSellingPoints: string;
+  competitiveAdvantages: string;
+};
+
 export function IntelligencePanel({
   product,
   intelligence,
 }: {
   product: Product;
-  intelligence: ProductIntelligence | null;
+  intelligence: Intelligence | null;
 }) {
   if (!intelligence) {
     return (

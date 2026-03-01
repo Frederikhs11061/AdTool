@@ -1,25 +1,69 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { v } from "convex/values";
+import { action, internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 
-/**
- * Deep research on product: features, benefits, pain points, use cases, scenarios.
- * Optionally scrape product URL for offers and value proposition.
- * This is a placeholder that seeds intelligence from product name; in production
- * use an LLM + product page scrape.
- */
-export async function POST(request: Request) {
-  try {
-    const { productId } = (await request.json()) as { productId?: string };
-    if (!productId) {
-      return NextResponse.json({ error: "productId required" }, { status: 400 });
-    }
+const FORMAT_DIMENSIONS: Record<string, { w: number; h: number }> = {
+  "1080x1080": { w: 1080, h: 1080 },
+  "1440x1800": { w: 1440, h: 1800 },
+  "1440x2560": { w: 1440, h: 2560 },
+};
 
-    const product = await prisma.product.findUnique({ where: { id: productId } });
-    if (!product) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 });
-    }
+export const analyzeAd = action({
+  args: {
+    productId: v.id("products"),
+    adLibraryUrl: v.string(),
+  },
+  handler: async (ctx, { productId, adLibraryUrl }) => {
+    const analyzedAd = {
+      angle: "Pain relief / transformation",
+      hook: "Wake up without pain",
+      visualStructure: "Lifestyle shot with product in scene",
+      cta: "Shop now",
+    };
+    const actionId = await ctx.runMutation(internal.actions.insertAnalyzeAction, {
+      productId,
+      adLibraryUrl: adLibraryUrl.trim(),
+      analyzedAd: JSON.stringify(analyzedAd),
+    });
+    return { actionId, analyzed: analyzedAd };
+  },
+});
 
-    // Placeholder: derive from product name / URL. In production: LLM + scrape.
+export const generateAds = action({
+  args: {
+    productId: v.id("products"),
+    adLibraryUrl: v.optional(v.string()),
+    adType: v.union(v.literal("variations"), v.literal("new_ads")),
+    language: v.optional(v.string()),
+    variations: v.optional(v.number()),
+    format: v.optional(v.string()),
+    customInstructions: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const variations = Math.min(Math.max(1, args.variations ?? 9), 12);
+    const format = args.format ?? "1080x1080";
+    const dims = FORMAT_DIMENSIONS[format] ?? FORMAT_DIMENSIONS["1080x1080"];
+
+    const creativeSetId = await ctx.runMutation(internal.actions.insertGenerateResult, {
+      productId: args.productId,
+      adLibraryUrl: args.adLibraryUrl ?? null,
+      adType: args.adType,
+      language: args.language ?? "da",
+      variations,
+      format,
+      customInstructions: args.customInstructions ?? null,
+      dims,
+    });
+    return { creativeSetId };
+  },
+});
+
+export const runResearch = action({
+  args: { productId: v.id("products") },
+  handler: async (ctx, { productId }) => {
+    const product = await ctx.runQuery(internal.actions.getProduct, { productId });
+    if (!product) throw new Error("Product not found");
+
     const keyFeatures = [
       "Portable, compact carry-friendly design for on-the-go use",
       "Targeted care formula designed for daily maintenance and protection",
@@ -80,40 +124,20 @@ export async function POST(request: Request) {
       "Compact enough for everyday carry while still delivering meaningful product volume",
     ];
 
-    await prisma.productIntelligence.upsert({
-      where: { productId },
-      create: {
-        productId,
-        keyFeatures: JSON.stringify(keyFeatures),
-        keyBenefits: JSON.stringify(keyBenefits),
-        targetPainPoints: JSON.stringify(targetPainPoints),
-        primaryUseCases: JSON.stringify(primaryUseCases),
-        targetScenarios: JSON.stringify(targetScenarios),
-        offers: JSON.stringify(offers),
-        valueProposition: positioningStatement,
-        positioningStatement,
-        uniqueSellingPoints: JSON.stringify(uniqueSellingPoints),
-        competitiveAdvantages: JSON.stringify(competitiveAdvantages),
-        confidence: 90,
-      },
-      update: {
-        keyFeatures: JSON.stringify(keyFeatures),
-        keyBenefits: JSON.stringify(keyBenefits),
-        targetPainPoints: JSON.stringify(targetPainPoints),
-        primaryUseCases: JSON.stringify(primaryUseCases),
-        targetScenarios: JSON.stringify(targetScenarios),
-        offers: JSON.stringify(offers),
-        valueProposition: positioningStatement,
-        positioningStatement,
-        uniqueSellingPoints: JSON.stringify(uniqueSellingPoints),
-        competitiveAdvantages: JSON.stringify(competitiveAdvantages),
-        confidence: 90,
-      },
+    await ctx.runMutation(internal.actions.upsertIntelligence, {
+      productId,
+      keyFeatures: JSON.stringify(keyFeatures),
+      keyBenefits: JSON.stringify(keyBenefits),
+      targetPainPoints: JSON.stringify(targetPainPoints),
+      primaryUseCases: JSON.stringify(primaryUseCases),
+      targetScenarios: JSON.stringify(targetScenarios),
+      offers: JSON.stringify(offers),
+      valueProposition: positioningStatement,
+      positioningStatement,
+      uniqueSellingPoints: JSON.stringify(uniqueSellingPoints),
+      competitiveAdvantages: JSON.stringify(competitiveAdvantages),
+      confidence: 90,
     });
-
-    return NextResponse.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: "Research failed" }, { status: 500 });
-  }
-}
+    return { ok: true };
+  },
+});

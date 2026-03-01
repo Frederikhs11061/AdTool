@@ -1,7 +1,9 @@
-import { prisma } from "@/lib/db";
+import { fetchQuery } from "convex/nextjs";
+import { api } from "@/convex/_generated/api";
 import { CreateAdsCard } from "@/components/product/CreateAdsCard";
 import { CreativeSetGrid } from "@/components/product/CreativeSetGrid";
 import { CreativeSetDetail } from "@/components/product/CreativeSetDetail";
+import type { Id } from "@/convex/_generated/dataModel";
 
 export const dynamic = "force-dynamic";
 
@@ -14,23 +16,17 @@ export default async function ProductCreativesPage({
 }) {
   const { id } = params;
   const { set: setId } = searchParams;
+  const productId = id as Id<"products">;
 
   const [product, sets] = await Promise.all([
-    prisma.product.findUnique({ where: { id } }),
-    prisma.creativeSet.findMany({
-      where: { productId: id },
-      orderBy: { createdAt: "desc" },
-      include: {
-        creatives: { orderBy: { sortOrder: "asc" } },
-        _count: { select: { creatives: true } },
-      },
-    }),
+    fetchQuery(api.products.get, { id: productId }),
+    fetchQuery(api.creativeSets.list, { productId }),
   ]);
 
   if (!product) return null;
 
   if (setId) {
-    const set = sets.find((s) => s.id === setId);
+    const set = sets.find((s: { id: string; _id?: string }) => s.id === setId || s._id === setId);
     if (set) {
       return (
         <div className="space-y-6">
