@@ -1,6 +1,7 @@
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { ProductGrid } from "@/components/products/ProductGrid";
+import { AddProductByLink } from "@/components/products/AddProductByLink";
 import { CreateProductButton } from "@/components/products/CreateProductButton";
 import { ConvexSetupRequired } from "@/components/ConvexSetupRequired";
 
@@ -35,6 +36,7 @@ export default async function ProductsPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
+      <AddProductByLink />
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold text-white">Products</h1>
         <div className="flex items-center gap-2">

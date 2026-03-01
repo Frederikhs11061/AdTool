@@ -16,12 +16,12 @@ export function CreateProductButton() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name?.trim()) return;
+    if (!url?.trim()) return;
     setLoading(true);
     try {
       const id = await createProduct({
-        name: name.trim(),
-        url: url.trim() || undefined,
+        name: name.trim() || "Nyt produkt",
+        url: url.trim(),
       });
       setOpen(false);
       setName("");
@@ -50,7 +50,7 @@ export function CreateProductButton() {
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <div className="bg-zinc-900 rounded-xl border border-gro-border w-full max-w-md">
             <div className="flex items-center justify-between p-4 border-b border-gro-border">
-              <h2 className="text-lg font-semibold text-white">Opret produkt</h2>
+              <h2 className="text-lg font-semibold text-white">Indsæt produktlink</h2>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
@@ -61,22 +61,8 @@ export function CreateProductButton() {
             </div>
             <form onSubmit={handleSubmit} className="p-4 space-y-4">
               <div>
-                <label htmlFor="product-name" className="block text-sm font-medium text-zinc-300 mb-1">
-                  Produktnavn *
-                </label>
-                <input
-                  id="product-name"
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="fx DeluxeCare CarryCare"
-                  className="gro-input w-full"
-                  required
-                />
-              </div>
-              <div>
                 <label htmlFor="product-url" className="block text-sm font-medium text-zinc-300 mb-1">
-                  Product URL (valgfri)
+                  Product URL (link til produktets side) *
                 </label>
                 <input
                   id="product-url"
@@ -85,10 +71,24 @@ export function CreateProductButton() {
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://din-shop.dk/produkt/..."
                   className="gro-input w-full"
+                  required
                 />
                 <p className="text-xs text-zinc-500 mt-1">
-                  Link til produktets side – bruges til research, brand og value proposition.
+                  Du kommer til produktets interface → Create Ad → From Ad Library → indsæt ad-link → variationer eller nye koncepter.
                 </p>
+              </div>
+              <div>
+                <label htmlFor="product-name" className="block text-sm font-medium text-zinc-300 mb-1">
+                  Produktnavn (valgfri)
+                </label>
+                <input
+                  id="product-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="fx DeluxeCare CarryCare"
+                  className="gro-input w-full"
+                />
               </div>
               <div className="flex gap-2 pt-2">
                 <button
@@ -100,10 +100,10 @@ export function CreateProductButton() {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading || !name.trim()}
+                  disabled={loading || !url.trim()}
                   className="flex-1 gro-btn-primary disabled:opacity-50"
                 >
-                  {loading ? "Opretter…" : "Opret produkt"}
+                  {loading ? "Opretter…" : "Gå til produkt"}
                 </button>
               </div>
             </form>

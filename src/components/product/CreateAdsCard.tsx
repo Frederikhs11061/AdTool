@@ -15,7 +15,9 @@ export function CreateAdsCard({ productId }: { productId: string }) {
         </div>
         <div>
           <h2 className="font-semibold text-white">Create Ads</h2>
-          <p className="text-sm text-zinc-500">Create new ad images for this product</p>
+          <p className="text-sm text-zinc-500">
+            Create new ad images for this product. Vælg From Ad Library → indsæt ad-link → variationer eller nye koncepter.
+          </p>
         </div>
       </div>
       <ChevronRight className="w-5 h-5 text-zinc-500 group-hover:text-gro-purple" />
