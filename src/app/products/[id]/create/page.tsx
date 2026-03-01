@@ -30,6 +30,8 @@ export default function CreateAdsPage() {
   const [customInstructions, setCustomInstructions] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [analyzed, setAnalyzed] = useState<{ angle: string; hook: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const router = useRouter();
   const analyzeAd = useAction(api.actions.analyzeAd);
@@ -46,11 +48,15 @@ export default function CreateAdsPage() {
   const handleLookup = async () => {
     if (!adLibraryUrl.trim() || !productId) return;
     setAnalyzing(true);
+    setError(null);
     try {
-      await analyzeAd({ productId: productId as Id<"products">, adLibraryUrl: adLibraryUrl.trim() });
+      const result = await analyzeAd({ productId: productId as Id<"products">, adLibraryUrl: adLibraryUrl.trim() });
+      setAnalyzed({ angle: result.analyzed.angle, hook: result.analyzed.hook });
       setStep("type");
     } catch (e) {
       console.error(e);
+      setError(e instanceof Error ? e.message : "Kunne ikke analysere ad URL");
+      setAnalyzed(null);
       setStep("type");
     } finally {
       setAnalyzing(false);
@@ -65,6 +71,7 @@ export default function CreateAdsPage() {
   const handleGenerate = async () => {
     if (!productId || !adType) return;
     setGenerating(true);
+    setError(null);
     try {
       const { creativeSetId } = await generateAds({
         productId: productId as Id<"products">,
@@ -79,6 +86,7 @@ export default function CreateAdsPage() {
       router.refresh();
     } catch (e) {
       console.error(e);
+      setError(e instanceof Error ? e.message : "Kunne ikke generere ads");
     } finally {
       setGenerating(false);
     }
@@ -142,6 +150,11 @@ export default function CreateAdsPage() {
           </div>
         )}
 
+        {error && (
+          <div className="mx-4 mt-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm">
+            {error}
+          </div>
+        )}
         {(step === "source" || step === "paste" || step === "type" || step === "settings") && (
           <>
             <div className="px-6 pt-4 flex gap-6 border-b border-gro-border">
@@ -253,17 +266,34 @@ export default function CreateAdsPage() {
                   <p className="text-xs text-zinc-500 mt-2">
                     Example: https://www.facebook.com/ads/library/?id=123456789 or just the ad ID
                   </p>
+                  {analyzed && (
+                    <div className="mt-4 p-3 rounded-lg bg-gro-purple/10 border border-gro-purple/30 text-sm">
+                      <span className="text-zinc-400">Analyseret: </span>
+                      <span className="text-white font-medium">{analyzed.angle}</span>
+                      {analyzed.hook && analyzed.hook !== analyzed.angle && (
+                        <>
+                          <span className="text-zinc-500 mx-2">|</span>
+                          <span className="text-zinc-300">{analyzed.hook}</span>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
               {step === "type" && (
                 <div className="flex gap-6">
                   <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-white mb-1">Choose ad type.</h3>
-                    <p className="text-zinc-500 mb-6">
+                    <h3 className="text-xl font-semibold text-white mb-1">Choose ad type</h3>
+                    <p className="text-zinc-500 mb-2">
                       See a preview of each option below. Both carry the winning strategy from your
                       reference ad.
                     </p>
+                    {analyzed && (
+                      <p className="text-sm text-gro-purple/90 mb-4">
+                        Baseret på analysen: <strong className="text-white">{analyzed.angle}</strong>
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                       <button
                         type="button"

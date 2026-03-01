@@ -8,6 +8,23 @@ export const getProduct = internalQuery({
   },
 });
 
+export const getLatestAnalyzedForProductAndUrl = internalQuery({
+  args: {
+    productId: v.id("products"),
+    adLibraryUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, { productId, adLibraryUrl }) => {
+    const actions = await ctx.db
+      .query("adActions")
+      .withIndex("by_product", (q) => q.eq("productId", productId))
+      .collect();
+    const withAnalysis = actions
+      .filter((a) => a.analyzedAd && (adLibraryUrl == null || (a.sourceUrl && a.sourceUrl.trim() === adLibraryUrl.trim())))
+      .sort((a, b) => b.createdAt - a.createdAt);
+    return withAnalysis[0]?.analyzedAd ?? null;
+  },
+});
+
 export const insertAnalyzeAction = internalMutation({
   args: {
     productId: v.id("products"),
@@ -37,6 +54,10 @@ export const insertGenerateResult = internalMutation({
     format: v.string(),
     customInstructions: v.optional(v.string()),
     dims: v.object({ w: v.number(), h: v.number() }),
+    audience: v.optional(v.string()),
+    angle: v.optional(v.string()),
+    concepts: v.optional(v.string()),
+    copies: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const actionId = await ctx.db.insert("adActions", {
@@ -52,23 +73,28 @@ export const insertGenerateResult = internalMutation({
       createdAt: Date.now(),
     });
 
+    const defaultAudience = "Older adults, likely retirees, who experience back pain upon waking and desire a better start to their day.";
+    const defaultAngle = "WAKE UP PAIN-FREE!";
+    const defaultConcepts = "Lifestyle";
+    const defaultCopies = ["Eksperternes valg for bedre søvn", "Slip stressen", "Find roen"];
+
     const creativeSetId = await ctx.db.insert("creativeSets", {
       productId: args.productId,
       actionId,
-      audience: "Older adults, likely retirees, who experience back pain upon waking and desire a better start to their day.",
-      angle: "WAKE UP PAIN-FREE!",
-      concepts: "Lifestyle",
+      audience: args.audience ?? defaultAudience,
+      angle: args.angle ?? defaultAngle,
+      concepts: args.concepts ?? defaultConcepts,
       createdAt: Date.now(),
     });
 
-    const copies = ["Eksperternes valg for bedre søvn", "Slip stressen", "Find roen"];
+    const copies = args.copies?.length ? args.copies : defaultCopies;
     for (let i = 0; i < args.variations; i++) {
       await ctx.db.insert("creatives", {
         creativeSetId,
         imageUrl: `https://placehold.co/${args.dims.w}x${args.dims.h}/1f2937/8b5cf6?text=Ad+${i + 1}`,
         width: args.dims.w,
         height: args.dims.h,
-        copy: copies[i % 3],
+        copy: copies[i % copies.length],
         sortOrder: i,
         createdAt: Date.now(),
       });

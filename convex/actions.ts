@@ -9,6 +9,7 @@ type InternalApi = {
     insertGenerateResult: import("convex/server").FunctionReference<"mutation", "internal", Record<string, unknown>, Id<"creativeSets">>;
     upsertIntelligence: import("convex/server").FunctionReference<"mutation", "internal", Record<string, unknown>, void>;
     getProduct: import("convex/server").FunctionReference<"query", "internal", { productId: Id<"products"> }, { name: string } | null>;
+    getLatestAnalyzedForProductAndUrl: import("convex/server").FunctionReference<"query", "internal", { productId: Id<"products">; adLibraryUrl?: string }, string | null>;
   };
 };
 
@@ -18,6 +19,20 @@ const FORMAT_DIMENSIONS: Record<string, { w: number; h: number }> = {
   "1440x2560": { w: 1440, h: 2560 },
 };
 
+function parseOgFromHtml(html: string): { title?: string; description?: string; image?: string } {
+  const out: { title?: string; description?: string; image?: string } = {};
+  const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']/i)
+    || html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*property=["']og:title["']/i);
+  if (ogTitle) out.title = ogTitle[1].trim();
+  const ogDesc = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']*)["']/i)
+    || html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*property=["']og:description["']/i);
+  if (ogDesc) out.description = ogDesc[1].trim();
+  const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']*)["']/i)
+    || html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*property=["']og:image["']/i);
+  if (ogImage) out.image = ogImage[1].trim();
+  return out;
+}
+
 export const analyzeAd = action({
   args: {
     productId: v.id("products"),
@@ -26,16 +41,35 @@ export const analyzeAd = action({
   handler: async (
     ctx,
     { productId, adLibraryUrl }
-  ): Promise<{ actionId: Id<"adActions">; analyzed: { angle: string; hook: string; visualStructure: string; cta: string } }> => {
+  ): Promise<{ actionId: Id<"adActions">; analyzed: { angle: string; hook: string; visualStructure: string; cta: string; title?: string; description?: string; image?: string } }> => {
+    const url = adLibraryUrl.trim();
+    let title: string | undefined;
+    let description: string | undefined;
+    let image: string | undefined;
+    try {
+      const res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; AdTool/1.0; +https://adtool.app)" },
+      });
+      const html = await res.text();
+      const og = parseOgFromHtml(html);
+      title = og.title;
+      description = og.description;
+      image = og.image;
+    } catch {
+      // fetch failed (blocked, network, etc.) – keep fallback below
+    }
     const analyzedAd = {
-      angle: "Pain relief / transformation",
-      hook: "Wake up without pain",
-      visualStructure: "Lifestyle shot with product in scene",
-      cta: "Shop now",
+      angle: title || description?.slice(0, 80) || "Ad angle",
+      hook: description?.slice(0, 120) || title || "Strong hook",
+      visualStructure: image ? "Image-based creative" : "Lifestyle / product shot",
+      cta: description?.toLowerCase().includes("shop") ? "Shop now" : description?.toLowerCase().includes("learn") ? "Learn more" : "Shop now",
+      title,
+      description,
+      image,
     };
     const actionId = await ctx.runMutation((internal as InternalApi).actions.insertAnalyzeAction, {
       productId,
-      adLibraryUrl: adLibraryUrl.trim(),
+      adLibraryUrl: url,
       analyzedAd: JSON.stringify(analyzedAd),
     });
     return { actionId, analyzed: analyzedAd };
@@ -57,15 +91,39 @@ export const generateAds = action({
     const format = args.format ?? "1080x1080";
     const dims = FORMAT_DIMENSIONS[format] ?? FORMAT_DIMENSIONS["1080x1080"];
 
+    const analyzedJson = await ctx.runQuery(
+      (internal as InternalApi).actions.getLatestAnalyzedForProductAndUrl,
+      { productId: args.productId, adLibraryUrl: args.adLibraryUrl ?? undefined }
+    );
+    let audience: string | undefined;
+    let angle: string | undefined;
+    let concepts: string | undefined;
+    let copies: string[] | undefined;
+    if (analyzedJson) {
+      try {
+        const a = JSON.parse(analyzedJson) as { angle?: string; hook?: string; title?: string; description?: string };
+        angle = a.angle ?? a.hook;
+        audience = a.description?.slice(0, 200) ?? undefined;
+        concepts = a.title ? "From reference ad" : "Lifestyle";
+        if (a.hook) copies = [a.hook, a.angle ?? "", a.description?.slice(0, 80) ?? ""].filter(Boolean);
+      } catch {
+        // ignore parse error
+      }
+    }
+
     const creativeSetId = await ctx.runMutation((internal as InternalApi).actions.insertGenerateResult, {
       productId: args.productId,
-      adLibraryUrl: args.adLibraryUrl ?? null,
+      adLibraryUrl: args.adLibraryUrl ?? undefined,
       adType: args.adType,
       language: args.language ?? "da",
       variations,
       format,
-      customInstructions: args.customInstructions ?? null,
+      customInstructions: args.customInstructions ?? undefined,
       dims,
+      audience,
+      angle,
+      concepts,
+      copies,
     });
     return { creativeSetId };
   },
