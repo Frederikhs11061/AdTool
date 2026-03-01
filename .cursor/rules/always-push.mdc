@@ -1,0 +1,10 @@
+---
+description: Efter ændringer skal der altid committes og pushes til git
+alwaysApply: true
+---
+
+# Push altid efter ændringer
+
+- Når du har lavet kodeændringer i projektet, **commit og push altid** til git.
+- Lav én commit med en kort, beskrivende besked; push derefter til `origin` (typisk `main`).
+- Spørg ikke "vil du have at jeg pusher?" – gør det som sidste step.

@@ -9,29 +9,6 @@ const CONVEX_CLOUD_URL = "https://accomplished-cricket-635.eu-west-1.convex.clou
 export const dynamic = "force-dynamic";
 
 export default async function ProductsPage() {
-  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-  if (!convexUrl) {
-    return (
-      <div className="p-6 max-w-2xl mx-auto">
-        <div className="gro-card p-6 border-amber-500/30 bg-amber-500/5">
-          <h1 className="text-xl font-semibold text-white mb-2">Convex skal kobles på</h1>
-          <p className="text-zinc-400 text-sm mb-4">
-            Tilføj miljøvariablen i Vercel, så AdTool kan forbinde til Convex.
-          </p>
-          <ol className="text-sm text-zinc-300 list-decimal list-inside space-y-2 mb-4">
-            <li>Vercel → projekt → Settings → Environment Variables</li>
-            <li>Name: <code className="bg-zinc-800 px-1.5 py-0.5 rounded">NEXT_PUBLIC_CONVEX_URL</code></li>
-            <li>Value: Convex Dashboard → Health → Cloud URL</li>
-          </ol>
-          <div className="bg-zinc-900 border border-gro-border rounded-lg p-3 mb-4">
-            <code className="text-green-400 text-sm break-all">{CONVEX_CLOUD_URL}</code>
-          </div>
-          <p className="text-zinc-500 text-xs">Redeploy efter du har gemt variablen.</p>
-        </div>
-      </div>
-    );
-  }
-
   let products;
   try {
     products = await fetchQuery(api.products.list, {});
@@ -45,9 +22,10 @@ export default async function ProductsPage() {
           <pre className="p-3 bg-zinc-900 rounded text-sm text-red-300 overflow-auto mb-4">
             {message}
           </pre>
-          <p className="text-zinc-500 text-xs">
-            Tjek at NEXT_PUBLIC_CONVEX_URL på Vercel peger på din Convex deployment (Health → Cloud URL), og at du har kørt &quot;npx convex dev&quot; så schema og functions er pushet.
+          <p className="text-zinc-500 text-xs mb-2">
+            Tjek at NEXT_PUBLIC_CONVEX_URL på Vercel peger på din Convex deployment (Health → Cloud URL), og at du har kørt &quot;npx convex dev&quot; så schema og functions er pushet. Redeploy efter ændringer.
           </p>
+          <p className="text-xs text-zinc-500">Eksempel URL: <code className="text-green-400 break-all">{CONVEX_CLOUD_URL}</code></p>
         </div>
       </div>
     );
