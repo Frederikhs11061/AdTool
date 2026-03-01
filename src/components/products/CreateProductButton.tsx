@@ -26,7 +26,7 @@ export function CreateProductButton() {
       setOpen(false);
       setName("");
       setUrl("");
-      router.push(`/products/${id}`);
+      router.push(`/products/${id}/actions`);
       router.refresh();
     } catch (e) {
       console.error(e);

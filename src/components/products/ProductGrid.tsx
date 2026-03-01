@@ -26,7 +26,7 @@ export function ProductGrid({ products }: { products: ProductRow[] }) {
       {products.map((product) => (
         <Link
           key={product.id}
-          href={`/products/${product.id}`}
+          href={`/products/${product.id}/actions`}
           className="gro-card overflow-hidden block hover:border-gro-purple/50 transition-colors"
         >
           <div className="aspect-square bg-zinc-800 relative">
