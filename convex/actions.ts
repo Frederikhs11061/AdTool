@@ -263,7 +263,7 @@ Eksempel-format: {"audience":"...","angle":"...","concept":"...","copies":["..."
     throw new Error(`Claude API: ${res.status} ${err}`);
   }
   const data = (await res.json()) as { content?: { type: string; text?: string }[] };
-  const text = data.content?.[0]?.type === "text" ? data.content[0].text : "";
+  const text = (data.content?.[0]?.type === "text" ? data.content[0].text : undefined) ?? "";
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("Claude returnerede ikke JSON");
   const parsed = JSON.parse(jsonMatch[0]) as { audience?: string; angle?: string; concept?: string; copies?: string[] };
