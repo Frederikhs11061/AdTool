@@ -148,6 +148,8 @@ export const upsertIntelligence = internalMutation({
 });
 
 // --- Public actions ---
+const UA = "Mozilla/5.0 (compatible; AdTool/1.0; +https://adtool.app)";
+
 function parseOgFromHtml(html: string): { title?: string; description?: string; image?: string } {
   const out: { title?: string; description?: string; image?: string } = {};
   const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']*)["']/i)
@@ -162,6 +164,57 @@ function parseOgFromHtml(html: string): { title?: string; description?: string; 
   return out;
 }
 
+function parseTitleFromHtml(html: string): string | undefined {
+  const m = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+  return m ? m[1].trim() : undefined;
+}
+
+/** Research: fetch URL and return og + title */
+async function fetchPageContext(url: string): Promise<{ title?: string; description?: string; image?: string }> {
+  try {
+    const res = await fetch(url, { headers: { "User-Agent": UA } });
+    const html = await res.text();
+    const og = parseOgFromHtml(html);
+    const title = og.title || parseTitleFromHtml(html);
+    return { title, description: og.description, image: og.image };
+  } catch {
+    return {};
+  }
+}
+
+/** Derive audience, angle, concept from ad + brand (market research synthesis) */
+function synthesizeFromResearch(
+  productName: string,
+  brand: { title?: string; description?: string },
+  ad: { title?: string; description?: string }
+): { audience: string; angle: string; concept: string; copies: string[] } {
+  const brandDesc = (brand.description || brand.title || "").slice(0, 300);
+  const adCopy = (ad.description || ad.title || "").slice(0, 300);
+  const adTitle = ad.title || ad.description?.split(/[.!?]/)[0]?.trim() || productName;
+
+  const audience =
+    brandDesc || adCopy
+      ? `People interested in ${productName} who want ${(adCopy || brandDesc).slice(0, 80).replace(/\s+/g, " ")}`
+      : `Target audience for ${productName} (from reference ad and webshop research)`;
+
+  const angle = adTitle || productName;
+
+  const concept =
+    /lifestyle|livet|dagligdag|ro|søvn|stress|velvære|wellness|comfort/i.test(adCopy + brandDesc)
+      ? "Lifestyle"
+      : /rabat|tilbud|spar|save|deal|offer/i.test(adCopy + brandDesc)
+        ? "Offer"
+        : "Product benefit";
+
+  const copies = [
+    adTitle,
+    ad.description?.split(/[.!?]/)[0]?.trim() || angle,
+    brandDesc.slice(0, 80) || angle,
+  ].filter(Boolean);
+  const unique = [...new Set(copies)];
+  return { audience, angle, concept, copies: unique.length ? unique : [angle] };
+}
+
 export const analyzeAd = action({
   args: {
     productId: v.id("products"),
@@ -170,35 +223,71 @@ export const analyzeAd = action({
   handler: async (
     ctx,
     { productId, adLibraryUrl }
-  ): Promise<{ actionId: Id<"adActions">; analyzed: { angle: string; hook: string; visualStructure: string; cta: string; title?: string; description?: string; image?: string } }> => {
-    const url = adLibraryUrl.trim();
-    let title: string | undefined;
-    let description: string | undefined;
-    let image: string | undefined;
-    try {
-      const res = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; AdTool/1.0; +https://adtool.app)" },
-      });
-      const html = await res.text();
-      const og = parseOgFromHtml(html);
-      title = og.title;
-      description = og.description;
-      image = og.image;
-    } catch {
-      // fetch failed (blocked, network, etc.) – keep fallback below
-    }
-    const analyzedAd = {
-      angle: title || description?.slice(0, 80) || "Ad angle",
-      hook: description?.slice(0, 120) || title || "Strong hook",
-      visualStructure: image ? "Image-based creative" : "Lifestyle / product shot",
-      cta: description?.toLowerCase().includes("shop") ? "Shop now" : description?.toLowerCase().includes("learn") ? "Learn more" : "Shop now",
-      title,
-      description,
-      image,
+  ): Promise<{
+    actionId: Id<"adActions">;
+    analyzed: {
+      angle: string;
+      hook: string;
+      visualStructure: string;
+      cta: string;
+      audience: string;
+      concept: string;
+      copies: string[];
+      brandContext?: string;
+      title?: string;
+      description?: string;
+      image?: string;
     };
+  }> => {
+    const adUrl = adLibraryUrl.trim();
+
+    const product = await ctx.runQuery(internal.actions.getProduct, { productId });
+    if (!product) throw new Error("Product not found");
+    const productName = product.name;
+
+    let brandContext: { title?: string; description?: string; image?: string } = {};
+    if (product.url?.trim()) {
+      brandContext = await fetchPageContext(product.url.trim());
+    }
+
+    let adContext: { title?: string; description?: string; image?: string } = {};
+    adContext = await fetchPageContext(adUrl);
+
+    const { audience, angle, concept, copies } = synthesizeFromResearch(
+      productName,
+      brandContext,
+      adContext
+    );
+
+    const hook = adContext.description?.slice(0, 120) || adContext.title || angle;
+    const visualStructure = adContext.image ? "Image-based creative" : "Lifestyle / product shot";
+    const cta =
+      (adContext.description || "").toLowerCase().includes("shop")
+        ? "Shop now"
+        : (adContext.description || "").toLowerCase().includes("learn")
+          ? "Learn more"
+          : "Shop now";
+
+    const analyzedAd = {
+      angle,
+      hook,
+      visualStructure,
+      cta,
+      audience,
+      concept,
+      copies,
+      brandContext:
+        brandContext.title || brandContext.description
+          ? `Brand: ${brandContext.title || ""}. ${(brandContext.description || "").slice(0, 200)}. Image: ${brandContext.image || "none"}.`
+          : undefined,
+      title: adContext.title,
+      description: adContext.description,
+      image: adContext.image,
+    };
+
     const actionId = await ctx.runMutation(internal.actions.insertAnalyzeAction, {
       productId,
-      adLibraryUrl: url,
+      adLibraryUrl: adUrl,
       analyzedAd: JSON.stringify(analyzedAd),
     });
     return { actionId, analyzed: analyzedAd };
@@ -230,11 +319,19 @@ export const generateAds = action({
     let copies: string[] | undefined;
     if (analyzedJson) {
       try {
-        const a = JSON.parse(analyzedJson) as { angle?: string; hook?: string; title?: string; description?: string };
+        const a = JSON.parse(analyzedJson) as {
+          audience?: string;
+          angle?: string;
+          concept?: string;
+          copies?: string[];
+          hook?: string;
+          title?: string;
+          description?: string;
+        };
+        audience = a.audience;
         angle = a.angle ?? a.hook;
-        audience = a.description?.slice(0, 200) ?? undefined;
-        concepts = a.title ? "From reference ad" : "Lifestyle";
-        if (a.hook) copies = [a.hook, a.angle ?? "", a.description?.slice(0, 80) ?? ""].filter(Boolean);
+        concepts = a.concept ?? (a.title ? "From reference ad" : "Lifestyle");
+        copies = a.copies?.length ? a.copies : a.hook ? [a.hook, a.angle ?? "", a.description?.slice(0, 80) ?? ""].filter(Boolean) : undefined;
       } catch {
         // ignore parse error
       }

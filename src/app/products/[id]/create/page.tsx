@@ -30,7 +30,7 @@ export default function CreateAdsPage() {
   const [customInstructions, setCustomInstructions] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [analyzed, setAnalyzed] = useState<{ angle: string; hook: string } | null>(null);
+  const [analyzed, setAnalyzed] = useState<{ angle: string; hook: string; audience?: string; concept?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const router = useRouter();
@@ -51,7 +51,12 @@ export default function CreateAdsPage() {
     setError(null);
     try {
       const result = await analyzeAd({ productId: productId as Id<"products">, adLibraryUrl: adLibraryUrl.trim() });
-      setAnalyzed({ angle: result.analyzed.angle, hook: result.analyzed.hook });
+      setAnalyzed({
+        angle: result.analyzed.angle,
+        hook: result.analyzed.hook,
+        audience: (result.analyzed as { audience?: string }).audience,
+        concept: (result.analyzed as { concept?: string }).concept,
+      });
       setStep("type");
     } catch (e) {
       console.error(e);
@@ -290,9 +295,11 @@ export default function CreateAdsPage() {
                       reference ad.
                     </p>
                     {analyzed && (
-                      <p className="text-sm text-gro-purple/90 mb-4">
-                        Baseret på analysen: <strong className="text-white">{analyzed.angle}</strong>
-                      </p>
+                      <div className="text-sm text-gro-purple/90 mb-4 space-y-1">
+                        <p><strong className="text-white">Angle:</strong> {analyzed.angle}</p>
+                        {analyzed.audience && <p><strong className="text-white">Audience:</strong> {analyzed.audience.slice(0, 120)}{analyzed.audience.length > 120 ? "…" : ""}</p>}
+                        {analyzed.concept && <p><strong className="text-white">Concept:</strong> {analyzed.concept}</p>}
+                      </div>
                     )}
                     <div className="grid grid-cols-2 gap-4">
                       <button
